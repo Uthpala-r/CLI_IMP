@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["is_command_allowed_in_mode"],"struct":["CommandCompleter"]};

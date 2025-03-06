@@ -1,0 +1,42 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Determines if a command is allowed in the current CLI mode."><title>is_command_allowed_in_mode in pnf_cli::commandcompleter - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-b0742ba02757f159.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="pnf_cli" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0 (90b35a623 2024-11-26)" data-channel="1.83.0" data-search-js="search-f0d225181b97f9a4.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../static.files/main-f070b9041d14864c.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc fn"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button></nav><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../pnf_cli/index.html">pnf_cli</a><span class="version">0.1.0</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">is_<wbr>command_<wbr>allowed_<wbr>in_<wbr>mode</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#arguments" title="Arguments">Arguments</a></li><li><a href="#returns" title="Returns">Returns</a></li><li><a href="#supported-modes-and-commands" title="Supported Modes and Commands">Supported Modes and Commands</a></li><li><a href="#example" title="Example">Example</a></li><li><a href="#notes" title="Notes">Notes</a></li><li><a href="#performance" title="Performance">Performance</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="index.html">In pnf_<wbr>cli::<wbr>commandcompleter</a></h2></div></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><span class="rustdoc-breadcrumbs"><a href="../index.html">pnf_cli</a>::<wbr><a href="index.html">commandcompleter</a></span><h1>Function <span class="fn">is_command_allowed_in_mode</span><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../src/pnf_cli/commandcompleter.rs.html#205-218">source</a> </span></div><pre class="rust item-decl"><code>fn is_command_allowed_in_mode(command: &amp;<a class="struct" href="https://doc.rust-lang.org/1.83.0/alloc/string/struct.String.html" title="struct alloc::string::String">String</a>, mode: &amp;<a class="enum" href="../execute/enum.Mode.html" title="enum pnf_cli::execute::Mode">Mode</a>) -&gt; <a class="primitive" href="https://doc.rust-lang.org/1.83.0/std/primitive.bool.html">bool</a></code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Determines if a command is allowed in the current CLI mode.</p>
+<p>This function checks whether a given command is valid and permitted for execution
+in the specified CLI mode. Each mode has a predefined set of commands that are allowed.</p>
+<h2 id="arguments"><a class="doc-anchor" href="#arguments">§</a>Arguments</h2>
+<ul>
+<li><code>command</code>: A reference to a <code>String</code> representing the command to check.</li>
+<li><code>mode</code>: A reference to the current <code>Mode</code> in which the CLI is operating.</li>
+</ul>
+<h2 id="returns"><a class="doc-anchor" href="#returns">§</a>Returns</h2>
+<ul>
+<li><code>true</code> if the command is allowed in the given mode.</li>
+<li><code>false</code> if the command is not allowed in the given mode.</li>
+</ul>
+<h2 id="supported-modes-and-commands"><a class="doc-anchor" href="#supported-modes-and-commands">§</a>Supported Modes and Commands</h2>
+<ul>
+<li><strong>UserMode</strong>: Basic commands like <code>enable</code>, <code>exit</code>, <code>help</code>, and <code>ping</code>.</li>
+<li><strong>PrivilegedMode</strong>: Advanced commands like <code>configure</code>, <code>write</code>, <code>copy</code>, <code>show</code>, and others.</li>
+<li><strong>ConfigMode</strong>: Configuration commands like <code>hostname</code>, <code>interface</code>, <code>ip</code>, and more.</li>
+<li><strong>InterfaceMode</strong>: Interface-specific commands like <code>shutdown</code>, <code>switchport</code>, <code>ip</code>, etc.</li>
+<li><strong>VlanMode</strong>: VLAN-specific commands like <code>name</code>, <code>state</code>, and <code>vlan</code>.</li>
+<li><strong>RouterConfigMode</strong>: Router configuration commands like <code>network</code>, <code>neighbor</code>, and <code>area</code>.</li>
+<li><strong>ConfigStdNaclMode</strong>: Standard ACL commands like <code>deny</code>, <code>permit</code>, and <code>ip</code>.</li>
+<li><strong>ConfigExtNaclMode</strong>: Extended ACL commands like <code>deny</code>, <code>permit</code>, and <code>ip</code>.</li>
+</ul>
+<h2 id="example"><a class="doc-anchor" href="#example">§</a>Example</h2>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>command = <span class="string">"enable"</span>.to_string();
+<span class="kw">let </span>mode = Mode::UserMode;
+
+<span class="kw">if </span>is_command_allowed_in_mode(<span class="kw-2">&amp;</span>command, <span class="kw-2">&amp;</span>mode) {
+    <span class="macro">println!</span>(<span class="string">"Command '{}' is allowed in {:?} mode."</span>, command, mode);
+} <span class="kw">else </span>{
+    <span class="macro">println!</span>(<span class="string">"Command '{}' is not allowed in {:?} mode."</span>, command, mode);
+}</code></pre></div>
+<h2 id="notes"><a class="doc-anchor" href="#notes">§</a>Notes</h2>
+<ul>
+<li>Modes not explicitly defined in the match statement will return <code>false</code> for all commands.</li>
+<li>The <code>Mode</code> enum may include additional modes that are not currently covered.</li>
+</ul>
+<h2 id="performance"><a class="doc-anchor" href="#performance">§</a>Performance</h2>
+<p>The function uses the <code>matches!</code> macro to provide concise and efficient pattern matching
+for the commands within each mode.</p>
+</div></details></section></div></main></body></html>

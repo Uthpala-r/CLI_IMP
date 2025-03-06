@@ -1,0 +1,1 @@
+{"rustc":11594289678289209806,"features":"[\"default\", \"std\"]","declared_features":"[\"default\", \"derive\", \"phf\", \"std\", \"strum_macros\"]","target":8453229095592094662,"profile":11422374152626587759,"path":6358201789736020374,"deps":[],"local":[{"Precalculated":"0.26.3"}],"rustflags":[],"metadata":11680211291368566339,"config":2202906307356721367,"compile_kind":0}

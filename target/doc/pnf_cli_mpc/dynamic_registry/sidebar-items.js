@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["get_commands_for_mode","get_mode_commands_FNC","get_registered_commands","is_dynamic_command_allowed_in_mode","register_command"],"struct":["DYNAMIC_COMMANDS","MODE_PERMISSIONS"]};

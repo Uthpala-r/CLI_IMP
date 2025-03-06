@@ -1,0 +1,1 @@
+Cloned<Filter<std::collections::hash_map::Keys<'_, Mode, HashMap<std::string::String, Vec<std::string::String>>>, {closure@src/commandcompleter.rs:86:25: 86:30}>>

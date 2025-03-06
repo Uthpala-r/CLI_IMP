@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ParseAction"],"fn":["can_partially_complete","completer_input","find_common_string","parse_selection_char","replace_in_buffer","string_difference"],"struct":["ParseResult"]};
