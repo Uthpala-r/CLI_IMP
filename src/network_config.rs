@@ -3,7 +3,6 @@ use std::str::FromStr;
 use std::net::Ipv4Addr;
 use std::sync::{Mutex, Arc};
 use std::collections::HashMap;
-use sha2::{Sha256, Digest};
 use std::process::Command as ProcessCommand;
 use std::process::Stdio;
 use std::path::Path;
@@ -128,21 +127,6 @@ lazy_static::lazy_static! {
     ///
     pub static ref ACL_STORE: Mutex<HashMap<String, AccessControlList>> = Mutex::new(HashMap::new());
 
-
-    /// A static, thread-safe reference to a `PasswordStore` instance, protected by a `Mutex`.
-    /// 
-    /// This allows for concurrent access to the `PasswordStore` while ensuring that only one
-    /// thread can access the data at a time. The `PasswordStore` is initialized with default
-    /// values.
-    ///
-    /// # Example
-    /// ```rust
-    /// // Accessing the PASSWORD_STORAGE and modifying the PasswordStore
-    /// let mut store = PASSWORD_STORAGE.lock().unwrap();
-    /// store.add_password("user1", "password123");
-    /// ```
-    pub static ref PASSWORD_STORAGE: Mutex<PasswordStore> = Mutex::new(PasswordStore::default());
-
 }
 
 
@@ -211,25 +195,6 @@ pub fn get_system_interfaces() -> String {
 
     String::from_utf8_lossy(&output.stdout).to_string()
 }
-
-/// Encrypts a password using the SHA-256 hashing algorithm.
-///
-/// This function takes a plaintext password, hashes it using SHA-256, and returns the
-/// resulting hash as a hexadecimal string.
-///
-/// # Parameters
-/// - `password`: A reference to a string slice (`&str`) representing the password to be hashed.
-///
-/// # Returns
-/// A string containing the hexadecimal representation of the SHA-256 hash of the password.
-///
-pub fn encrypt_password(password: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(password);
-    let result = hasher.finalize();
-    format!("{:x}", result)  
-}
-
 
 
 /// Represents the configuration for the OSPF (Open Shortest Path First) protocol.
@@ -371,99 +336,6 @@ pub struct NtpAssociation {
     pub delay: f64,
     pub offset: f64,
     pub disp: f64,
-}
-
-
-/// A structure for storing passwords used in the CLI.
-///
-/// The `PasswordStore` struct is designed to hold two optional passwords:
-/// - `enable_password`: A plaintext password used for accessing privileged mode.
-/// - `enable_secret`: A hashed or encrypted password used as an alternative to `enable_password`.
-///
-/// # Fields
-/// - `enable_password`: An `Option<String>` that stores the plaintext enable password. Defaults to `None`.
-/// - `enable_secret`: An `Option<String>` that stores the hashed or encrypted enable secret. Defaults to `None`.
-///
-/// # Default Implementation
-/// The `Default` trait is implemented to initialize `PasswordStore` with both fields set to `None`.
-///
-/// # Example
-/// ```rust
-/// let password_store = PasswordStore::default();
-/// assert!(password_store.enable_password.is_none());
-/// assert!(password_store.enable_secret.is_none());
-///
-/// let password_store = PasswordStore {
-///     enable_password: Some("plaintext_password".to_string()),
-///     enable_secret: Some("hashed_secret".to_string()),
-/// };
-/// println!("Enable Password: {:?}", password_store.enable_password);
-/// println!("Enable Secret: {:?}", password_store.enable_secret);
-/// ```
-///
-/// # Usage
-/// This struct can be used to store and retrieve passwords securely within a CLI context. 
-/// You can initialize it with default values or specify the passwords during creation.
-pub struct PasswordStore {
-    pub enable_password: Option<String>,
-    pub enable_secret: Option<String>,
-}
-
-impl Default for PasswordStore {
-    /// Creates a new instance of `PasswordStore` with default values.
-    ///
-    /// Both `enable_password` and `enable_secret` are initialized to `None`
-    fn default() -> Self {
-        PasswordStore {
-            enable_password: None,
-            enable_secret: None,
-        }
-    }
-}
-
-
-/// Sets the enable password in the `PasswordStore`.
-/// 
-/// This function updates the stored `enable_password` to the provided value.
-///
-/// # Parameters
-/// - `password`: A reference to the password string to set as the enable password.
-pub fn set_enable_password(password: &str) {
-    let mut storage = PASSWORD_STORAGE.lock().unwrap();
-    storage.enable_password = Some(password.to_string());
-}
-
-
-/// Sets the enable secret in the `PasswordStore`.
-/// 
-/// This function updates the stored `enable_secret` to the provided value.
-///
-/// # Parameters
-/// - `secret`: A reference to the secret string to set as the enable secret.
-pub fn set_enable_secret(secret: &str) {
-    let mut storage = PASSWORD_STORAGE.lock().unwrap();
-    storage.enable_secret = Some(secret.to_string());
-}
-
-
-/// Retrieves the stored enable password from the `PasswordStore`.
-/// 
-/// # Returns
-/// An `Option<String>`, containing the enable password if set, or `None` if not set.
-pub fn get_enable_password() -> Option<String> {
-    let storage = PASSWORD_STORAGE.lock().unwrap();
-    storage.enable_password.clone()
-}
-
-
-
-/// Retrieves the stored enable secret from the `PasswordStore`.
-/// 
-/// # Returns
-/// An `Option<String>`, containing the enable secret if set, or `None` if not set.
-pub fn get_enable_secret() -> Option<String> {
-    let storage = PASSWORD_STORAGE.lock().unwrap();
-    storage.enable_secret.clone()
 }
 
 pub fn read_lines<P>(filename: P) -> io::Result<io::Lines<io::BufReader<File>>>

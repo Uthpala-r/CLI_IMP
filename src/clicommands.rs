@@ -14,8 +14,9 @@ use crate::execute::Command;
 use crate::cliconfig::CliContext;
 use crate::execute::Mode;
 use crate::clock_settings::{handle_clock_set, parse_clock_set_input, handle_show_clock, handle_show_uptime};
-use crate::network_config::{calculate_broadcast, print_interface, format_flags, get_system_interfaces, connect_via_ssh, execute_spawn_process, InterfaceConfig, InterfacesConfig, STATUS_MAP, IP_ADDRESS_STATE, IFCONFIG_STATE, ROUTE_TABLE, encrypt_password, PASSWORD_STORAGE, set_enable_password, set_enable_secret};
+use crate::network_config::{calculate_broadcast, print_interface, format_flags, get_system_interfaces, connect_via_ssh, execute_spawn_process, InterfaceConfig, InterfacesConfig, STATUS_MAP, IP_ADDRESS_STATE, IFCONFIG_STATE, ROUTE_TABLE};
 use crate::network_config::NtpAssociation;
+use crate::passwd::{PASSWORD_STORAGE, set_enable_password, set_enable_secret, get_enable_password, get_enable_secret, encrypt_password};
 use crate::show_c::{show_clock, show_uptime, show_version, show_sessions, show_controllers, show_history, show_run_conf, show_start_conf, show_interfaces, show_ip_int_br, show_login, show_ntp, show_ntp_asso, show_proc, show_proc_cpu, show_proc_cpu_his, show_proc_mem};
 
 /// Builds and returns a `HashMap` of available commands, each represented by a `Command` structure.
@@ -88,11 +89,9 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
         execute: |args, context, _| {
             if args.is_empty(){
                 if matches!(context.current_mode, Mode::UserMode) {
-                    // Retrieve stored passwords
-                    let storage = PASSWORD_STORAGE.lock().unwrap();
-                    let stored_password = storage.enable_password.clone();
-                    let stored_secret = storage.enable_secret.clone();
-                    drop(storage); // Release the lock
+
+                    let stored_password = get_enable_password();
+                    let stored_secret = get_enable_secret();
 
                     fn proceed_to_priv_mode(context: &mut CliContext){
                         context.current_mode = Mode::PrivilegedMode;
@@ -107,44 +106,56 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
                     }
         
                     // Prompt for the enable password
-                    if stored_secret.is_none() {
+                    if stored_secret.is_none() && stored_password.is_some() {
                         println!("Enter password:");
                         let input_password = read_password().unwrap_or_else(|_| "".to_string());
+                        let hashed_input = encrypt_password(&input_password);
             
                         if let Some(ref stored_password) = stored_password {
-                            if input_password == *stored_password {
+                            if hashed_input == *stored_password {
                                 // Correct enable password, proceed to privileged mode
                                 proceed_to_priv_mode(context);
                                 return Ok(());
                             }
                         }
+                        return Err("Incorrect password.".into());
                     }
 
-                    if stored_password.is_none() {
+                    if stored_password.is_none() && stored_secret.is_some(){
                         println!("Enter secret:");
                         let input_secret= read_password().unwrap_or_else(|_| "".to_string());
+                        let hashed_input = encrypt_password(&input_secret);
             
                         if let Some(ref stored_secret) = stored_secret {
-                            if input_secret == *stored_secret {
+                            if hashed_input == *stored_secret {
                                 // Correct enable password, proceed to privileged mode
                                 proceed_to_priv_mode(context);
                                 return Ok(());
                             }
                         }
+                        return Err("Incorrect secret.".into());
                     }
             
                     // If secret is stored, prompt for it if password check fails
-                    if let (Some(ref stored_secret), Some(ref stored_password)) = (stored_secret, stored_password) {
+                    if stored_password.is_some() && stored_secret.is_some() {
                         println!("Enter password:");
                         let input_password = read_password().unwrap_or_else(|_| "".to_string());
                         println!("Enter secret:");
                         let input_secret = read_password().unwrap_or_else(|_| "".to_string());
+
+                        // Hash both inputs
+                        let hashed_password = encrypt_password(&input_password);
+                        let hashed_secret = encrypt_password(&input_secret);
         
-                        if input_secret == *stored_secret && input_password == *stored_password {
-                            // Correct enable secret, proceed to privileged mode
-                            proceed_to_priv_mode(context);
-                            return Ok(());
+                        if let (Some(ref stored_secrets), Some(ref stored_passwords)) = 
+                                (stored_secret, stored_password) {
+                            if hashed_secret == *stored_secrets && hashed_password == *stored_passwords {
+                                // Both correct, proceed to privileged mode
+                                proceed_to_priv_mode(context);
+                                return Ok(());
+                            }
                         }
+                        return Err("Incorrect password or secret.".into());
                     }
         
                     // If neither password nor secret matches, return an error
@@ -160,7 +171,8 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
                                 Err("You must provide the enable password.".into())
                             } else {
                                 let password = &args[1];
-                                set_enable_password(password);
+                                let hashed_password = encrypt_password(password);
+                                set_enable_password(&hashed_password);
                                 context.config.enable_password = Some(password.to_string());
                                 println!("Enable password set.");
                                 Ok(())
@@ -175,7 +187,8 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
                                 Err("You must provide the enable secret password.".into())
                             } else {
                                 let secret = &args[1];
-                                set_enable_secret(secret);
+                                let hashed_secret = encrypt_password(secret);
+                                set_enable_secret(&hashed_secret);
                                 context.config.enable_secret = Some(secret.to_string());
                                 println!("Enable secret password set.");
                                 Ok(())
@@ -383,24 +396,6 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
         suggestions2: None,
         options: None,
         execute: |_, context, _| {
-            
-            println!("System configuration has been modified. Save? [yes/no]:");
-            
-            //execute_spawn_process("sudo", &["reboot"]);
-            //Ok(())
-
-            let mut save_input = String::new();
-            std::io::stdin().read_line(&mut save_input).expect("Failed to read input");
-            let save_input = save_input.trim();
-    
-            if ["yes", "y", ""].contains(&save_input.to_ascii_lowercase().as_str()) {
-                println!("Building configuration...");
-                println!("[OK]");
-            } else if ["no", "n"].contains(&save_input.to_ascii_lowercase().as_str()) {
-                println!("Configuration not saved.");
-            } else {
-                return Err("Invalid input. Please enter 'yes' or 'no'.".into());
-            }
     
             println!("Proceed with reload? [yes/no]:");
             let mut reload_confirm = String::new();
@@ -408,17 +403,10 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
             let reload_confirm = reload_confirm.trim();
     
             if ["yes", "y", ""].contains(&reload_confirm.to_ascii_lowercase().as_str()) {
-                println!("System Bootstrap, Version 15.1(4)M4, RELEASE SOFTWARE (fc1)");
-                println!("Technical Support: http://www.cisco.com/techsupport");
-                println!("Copyright (c) 2010 by cisco Systems, Inc.");
-                println!("Total memory size = 512 MB - On-board = 512 MB, DIMM0 = 0 MB");
-    
-                // Simulate reload process
-                context.current_mode = Mode::UserMode;
-                context.prompt = format!("{}>", context.config.hostname);
-    
-                println!("\nPress RETURN to get started!");
+                  
+                execute_spawn_process("sudo", &["reboot"]);
                 Ok(())
+                
             } else if ["no", "n"].contains(&reload_confirm.to_ascii_lowercase().as_str()) {
                 println!("Reload aborted.");
                 Ok(())

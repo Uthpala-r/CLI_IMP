@@ -13,6 +13,7 @@ mod run_config;
 mod execute;
 mod network_config;
 mod show_c;
+mod passwd;
 
 
 /// Internal imports from the application's modules
