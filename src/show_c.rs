@@ -1,7 +1,7 @@
 use crate::clock_settings::{Clock, handle_show_clock, handle_show_uptime};
 use crate::cliconfig::CliContext;
 use crate::network_config::{read_lines, IP_ADDRESS_STATE, STATUS_MAP};
-use crate::run_config::{get_running_config, default_startup_config};
+use crate::run_config::{get_running_config};
 
 pub fn show_clock(clock: &mut Option<Clock>) -> String {
     if let Some(clock) = clock {
@@ -82,16 +82,25 @@ pub fn show_run_conf(context: &CliContext) -> Result<(), String>{
     Ok(())
 }
 
-pub fn show_start_conf(context: &CliContext) -> Result<(), String>{
-    println!("Building configuration...\n");
-    if let Some(last_written) = &context.config.last_written {
-        println!("Startup configuration (last saved: {}):\n", last_written);
-        let startup_config = get_running_config(&context);
-        println!("{}", startup_config);
-    } else {
-        println!("Startup configuration (default):\n");
-        println!("{}", default_startup_config());
+pub fn show_start_conf(context: &CliContext) -> Result<(), String> {
+    println!("Reading startup configuration file...\n");
+    
+    let config_path = "startup-config.conf";
+    
+    match std::fs::read_to_string(config_path) {
+        Ok(contents) => {
+            if let Some(last_written) = &context.config.last_written {
+                println!("Startup configuration (last saved: {}):\n", last_written);
+            } else {
+                println!("Startup configuration file contents:\n");
+            }
+            println!("{}", contents);
+        },
+        Err(e) => {
+            return Err(format!("Error reading startup configuration file: {}", e));
+        }
     }
+    
     Ok(())
 }
 

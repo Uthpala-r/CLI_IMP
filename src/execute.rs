@@ -318,6 +318,7 @@ pub fn get_mode_commands<'a>(commands: &'a HashMap<&str, Command>, mode: &Mode) 
                     cmd == "service" ||
                     cmd == "set" ||
                     cmd == "enable" ||
+                    cmd == "copy" ||
                     cmd == "ifconfig" ||  
                     cmd == "ntp" ||
                     cmd == "no" || 

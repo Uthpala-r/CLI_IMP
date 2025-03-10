@@ -3,13 +3,14 @@ use std::collections::HashMap;
 use std::net::Ipv4Addr;
 use std::path::Path;
 use std::fs::File;
+use std::fs;
 use std::io::{self, Write, BufRead, BufReader};
 use std::str::FromStr;
 use rpassword::read_password;
 use std::process::Command as ProcessCommand;
 use std::process::Stdio;
 
-use crate::run_config::{get_running_config, default_startup_config, help_command};
+use crate::run_config::{get_running_config, help_command, save_running_to_startup};
 use crate::execute::Command;
 use crate::cliconfig::CliContext;
 use crate::execute::Mode;
@@ -296,7 +297,8 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
             match args[0] {
                 "network" => {
                     println!("Connecting to network processor...");
-                    connect_via_ssh("pnfcli", "192.168.253.146")?; //Replace with actual details of NP
+                    //connect_via_ssh("pnfcli", "192.168.253.146")?; //Replace with actual details of NP
+                    connect_via_ssh("root", "192.168.253.100")?;    //OpenWRT VM
                     println!("Connected successfully!");
                     Ok(())
                 },
@@ -405,6 +407,34 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
             if ["yes", "y", ""].contains(&reload_confirm.to_ascii_lowercase().as_str()) {
                   
                 execute_spawn_process("sudo", &["reboot"]);
+                Ok(())
+                
+            } else if ["no", "n"].contains(&reload_confirm.to_ascii_lowercase().as_str()) {
+                println!("Reload aborted.");
+                Ok(())
+            } else {
+                Err("Invalid input. Please enter 'yes', 'y', or 'no'.".into())
+            }
+        },
+    });
+
+    commands.insert("poweroff", Command {
+        name: "poweroff",
+        description: "Shutdown the Management PC",
+        suggestions: None,
+        suggestions1: None,
+        suggestions2: None,
+        options: None,
+        execute: |_, context, _| {
+    
+            println!("Do you want to shutdown the PC? [yes/no]:");
+            let mut reload_confirm = String::new();
+            std::io::stdin().read_line(&mut reload_confirm).expect("Failed to read input");
+            let reload_confirm = reload_confirm.trim();
+    
+            if ["yes", "y", ""].contains(&reload_confirm.to_ascii_lowercase().as_str()) {
+                fs::remove_file("history.txt");  
+                execute_spawn_process("sudo", &["shutdown", "now"]);
                 Ok(())
                 
             } else if ["no", "n"].contains(&reload_confirm.to_ascii_lowercase().as_str()) {
@@ -920,15 +950,9 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
             execute: |args, context, _| {
                 if matches!(context.current_mode, Mode::UserMode | Mode::PrivilegedMode | Mode::ConfigMode) {
                     if args.len() == 1 && args[0] == "memory" {
-                        // Save the running configuration to the startup configuration
-                        let running_config = get_running_config(context);
-                        context.config.startup_config = Some(running_config.clone());
-        
-                        // Update the last written timestamp
-                        context.config.last_written = Some(chrono::Local::now().to_string());
-        
-                        println!("Configuration saved successfully.");
+                        save_running_to_startup(context);
                         Ok(())
+                    
                     } else {
                         Err("Invalid arguments provided to 'write memory'. This command does not accept additional arguments.".into())
                     }
@@ -955,27 +979,14 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
                     return Err("The 'copy' command is only available in Privileged EXEC mode, Config mode and interface mode".into());
                 }
 
-                // Handle both full and abbreviated versions of 'running-config'
-                let source = args[0];
-                if !source.starts_with("run") {
-                    return Err("Invalid source. Use 'running-config'".into());
-                }
-
                 else if args[1] == "startup-config"{
                     
-                    // Save the running configuration to the startup configuration
-                    let running_config = get_running_config(context);
-                    context.config.startup_config = Some(running_config.clone());
-        
-                    // Update the last written timestamp
-                    context.config.last_written = Some(chrono::Local::now().to_string());
-        
-                    println!("Configuration saved successfully.");
+                    save_running_to_startup(context);
                     Ok(())
                     
                 }
 
-                else {
+                else if args[1] != "startup-config"{
                     let file_name = args[1];
                     let running_config = get_running_config(context); 
                     let file_path = Path::new(file_name);
@@ -994,6 +1005,9 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
                             Err(err.to_string())
                         }
                     }
+                } else {
+                    println!("the command should be 'copy running-config startup-config|<file-name>'.");
+                    Ok(())
                 }
             },
         },

@@ -232,7 +232,7 @@ fn is_command_allowed_in_mode(command: &String, mode: &Mode) -> bool {
     match mode {
         Mode::UserMode => matches!(command.as_str(), "enable" | "do" | "disable" | "traceroute" | "connect" | "reload" | "exit" | "clear" | "help" | "show" | "ping" | "ifconfig"),
         Mode::PrivilegedMode => matches!(command.as_str(), "configure" | "do" | "ssh" | "disable" | "traceroute" | "connect" | "reload" | "debug" | "undebug" | "exit" | "clear" | "help" | "write" | "copy" | "clock" | "ping" | "show" | "ifconfig"),
-        Mode::ConfigMode => matches!(command.as_str(), "hostname" | "do" | "interface" | "connect" | "disable" | "traceroute" | "reload" | "no" | "exit" | "clear" | "help" | "write" | "ping" | "enable" | "service" | "set" | "ifconfig" | "ntp"),
+        Mode::ConfigMode => matches!(command.as_str(), "hostname" | "do" | "copy" | "interface" | "connect" | "disable" | "traceroute" | "reload" | "no" | "exit" | "clear" | "help" | "write" | "ping" | "enable" | "service" | "set" | "ifconfig" | "ntp"),
         Mode::InterfaceMode => matches!(command.as_str(), "exit" | "do" | "reload" | "shutdown" | "no" | "clear" | "help" | "write" | "interface" | "ip"), 
     }
 }
