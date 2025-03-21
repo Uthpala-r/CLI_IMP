@@ -271,6 +271,7 @@ pub fn get_mode_commands<'a>(commands: &'a HashMap<&str, Command>, mode: &Mode) 
                     cmd == "show" ||
                     cmd == "clear" ||
                     cmd == "reload" ||
+                    cmd == "poweroff" ||
                     cmd == "connect" ||
                     cmd == "disable" ||
                     cmd == "ifconfig" ||
@@ -294,6 +295,7 @@ pub fn get_mode_commands<'a>(commands: &'a HashMap<&str, Command>, mode: &Mode) 
                     cmd == "clock" ||
                     cmd == "clear" ||
                     cmd == "reload" ||
+                    cmd == "poweroff" ||
                     cmd == "debug" ||
                     cmd == "undebug" ||
                     cmd == "connect" ||
@@ -323,6 +325,7 @@ pub fn get_mode_commands<'a>(commands: &'a HashMap<&str, Command>, mode: &Mode) 
                     cmd == "ntp" ||
                     cmd == "no" || 
                     cmd == "reload" ||
+                    cmd == "poweroff" ||
                     cmd == "connect" ||
                     cmd == "disable" ||
                     cmd == "traceroute" ||
@@ -342,6 +345,7 @@ pub fn get_mode_commands<'a>(commands: &'a HashMap<&str, Command>, mode: &Mode) 
                     cmd == "help" ||
                     cmd == "write" ||
                     cmd == "reload" ||
+                    cmd == "poweroff" ||
                     cmd == "ip" ||
                     cmd == "do" 
                 })

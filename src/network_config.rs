@@ -45,7 +45,7 @@ lazy_static::lazy_static! {
     /// By default, the `ens33` interface is initialized with the IP `192.168.253.135` 
     /// and a subnet prefix of 24.
     /// 
-    pub static ref IFCONFIG_STATE: Mutex<HashMap<String, InterfaceConfig>> = Mutex::new(HashMap::new());
+    pub static ref SELECTED_INTERFACE: Mutex<Option<String>> = Mutex::new(None);
 
     
     /// A thread-safe global map that tracks the administrative status of network interfaces.
@@ -396,4 +396,19 @@ pub fn execute_spawn_process(command: &str, args: &[&str]) -> Result<(), String>
     } else {
         Err(format!("{} command failed with exit status: {}", command, status))
     }
+}
+
+pub fn ip_with_cidr(ip: &str, subnet_mask: &str) -> Result<String, String> {
+    let mask_octets: Vec<u8> = subnet_mask
+        .split('.')
+        .map(|s| s.parse::<u8>().unwrap_or(0))
+        .collect();
+
+    if mask_octets.len() != 4 {
+        return Err("Invalid subnet mask".to_string());
+    }
+
+    let cidr_prefix = mask_octets.iter().map(|&octet| octet.count_ones()).sum::<u32>();
+
+    Ok(format!("{}/{}", ip, cidr_prefix))
 }

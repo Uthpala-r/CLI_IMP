@@ -1,5 +1,5 @@
 [package]
-name = "pnf_cli_mpc"
+name = "pnf_cli_mpc_imp"
 version = "0.1.0"
 edition = "2021"
 

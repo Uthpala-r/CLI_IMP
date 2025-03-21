@@ -15,7 +15,7 @@ use crate::execute::Command;
 use crate::cliconfig::CliContext;
 use crate::execute::Mode;
 use crate::clock_settings::{handle_clock_set, parse_clock_set_input, handle_show_clock, handle_show_uptime};
-use crate::network_config::{calculate_broadcast, print_interface, format_flags, get_system_interfaces, connect_via_ssh, execute_spawn_process, InterfaceConfig, InterfacesConfig, STATUS_MAP, IP_ADDRESS_STATE, IFCONFIG_STATE, ROUTE_TABLE};
+use crate::network_config::{calculate_broadcast, ip_with_cidr, print_interface, format_flags, get_system_interfaces, connect_via_ssh, execute_spawn_process, InterfaceConfig, InterfacesConfig, STATUS_MAP, IP_ADDRESS_STATE,  SELECTED_INTERFACE, ROUTE_TABLE};
 use crate::network_config::NtpAssociation;
 use crate::passwd::{PASSWORD_STORAGE, set_enable_password, set_enable_secret, get_enable_password, get_enable_secret, encrypt_password};
 use crate::show_c::{show_clock, show_uptime, show_version, show_sessions, show_controllers, show_history, show_run_conf, show_start_conf, show_interfaces, show_ip_int_br, show_login, show_ntp, show_ntp_asso, show_proc, show_proc_cpu, show_proc_cpu_his, show_proc_mem};
@@ -229,52 +229,55 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
 
     commands.insert("interface", Command {
         name: "interface",
-        description: "Enter Interface configuration mode or Interface Range configuration mode",
-        suggestions: Some(vec!["range"]),
+        description: "Enter Interface configuration mode",
+        suggestions: None,
         suggestions1: None,
         suggestions2: None,
-        options: Some(vec!["range", 
-            "<interface-name>    - Specify a valid interface name"]),
+        options: Some(vec!["<interface-name>    - Specify a valid interface name"]),
         execute: |args, context, _| {
             if matches!(context.current_mode, Mode::ConfigMode | Mode::InterfaceMode) {
+                let interfaces_output = std::fs::read_dir("/sys/class/net");
+                
+                // Create the interface_list from the filesystem entries
+                let interface_list = match interfaces_output {
+                    Ok(entries) => {
+                        entries
+                            .filter_map(|entry| {
+                                entry.ok().and_then(|e| 
+                                    e.file_name().into_string().ok()
+                                )
+                            })
+                            .collect::<Vec<String>>()
+                    },
+                    Err(e) => return Err(format!("Failed to read network interfaces: {}", e))
+                };
+                
+                // Generate comma-separated list for display
+                let interfaces_list = interface_list.join(", ");
+                
+                //let args: Vec<String> = std::env::args().skip(1).collect();
                 if args.is_empty() {
-                    return Err("Please specify an interface or range, e.g., 'interface g0/0' or 'interface range f0/0 - 24'.".into());
+                    return Err(format!("Please specify a valid interface. Available interfaces: {}", interfaces_list));
                 }
     
-                let input = args.join(" ");
-                if input.starts_with("r") {
-                    // Handle interface range
-    
-                    let after_range = match input.find(' ') {
-                        Some(pos) => input[pos..].trim(),
-                        None => return Err("Invalid range format. Use 'interface range f0/0 - 24'.".into())
-                    };
-    
-                    let range_parts: Vec<&str> = after_range.split('-').map(|s| s.trim()).collect();
+                if args.len() == 1 {
+                    let net_interface = &args[0];
+                    if interface_list.iter().any(|i| i == net_interface) {
+                        context.current_mode = Mode::InterfaceMode;
+                        context.selected_interface = Some(net_interface.to_string());
+                        context.prompt = format!("{}(config-if)#", context.config.hostname);
+                        println!("Entering Interface configuration mode for: {}", net_interface);
 
-                    if range_parts.len() != 2 {
-                        return Err("Invalid range format. Use 'interface range f0/0 - 24'.".into());
+                        // Store the selected interface globally
+                        let mut selected = SELECTED_INTERFACE.lock().unwrap();
+                        *selected = Some(net_interface.to_string());
+
+                        Ok(())
+                    } else {
+                        Err(format!("Invalid interface: {}. Available interfaces: {}", net_interface, interfaces_list))
                     }
-    
-                    let start = range_parts[0];
-                    let end = range_parts[1];
-                    if start.is_empty() || end.is_empty() {
-                        return Err("Invalid range format. Start and end interfaces must be specified.".into());
-                    }
-    
-                    context.current_mode = Mode::InterfaceMode;
-                    context.selected_interface = Some(format!("{} - {}", start, end));
-                    context.prompt = format!("{}(config-if-range)#", context.config.hostname);
-                    println!("Entering Interface Range configuration mode for: {} - {}", start, end);
-                    Ok(())
                 } else {
-                    // Handle single interface
-                    let interface = input.clone();
-                    context.current_mode = Mode::InterfaceMode;
-                    context.selected_interface = Some(interface.clone());
-                    context.prompt = format!("{}(config-if)#", context.config.hostname);
-                    println!("Entering Interface configuration mode for: {}", interface);
-                    Ok(())
+                    Err(format!("Invalid number of arguments. Usage: interface <interface-name>").into())
                 }
             } else {
                 Err("The 'interface' command is only available in Global Configuration mode and interface configuration mode.".into())
@@ -298,7 +301,7 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
                 "network" => {
                     println!("Connecting to network processor...");
                     //connect_via_ssh("pnfcli", "192.168.253.146")?; //Replace with actual details of NP
-                    connect_via_ssh("root", "192.168.253.100")?;    //OpenWRT VM
+                    connect_via_ssh("root", "192.168.100.100")?;    //OpenWRT VM
                     println!("Connected successfully!");
                     Ok(())
                 },
@@ -556,79 +559,14 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
                 "mtu <size>          - Set MTU size"
             ]),
             execute: |args, _, _| {
-                let mut ifconfig_state = IFCONFIG_STATE.lock().unwrap();
-    
+            
                 // Display all interfaces if no arguments
                 if args.is_empty() {
                     println!("System Network Interfaces:");
                     println!("-------------------------");
                     println!("{}", get_system_interfaces());
                     
-                    println!("\nConfigured Virtual Interfaces:");
-                    println!("----------------------------");
-                    if ifconfig_state.is_empty() {
-                        println!("No interfaces configured.");
-                        return Ok(());
-                    }
-        
-                    for (name, config) in ifconfig_state.iter() {
-                        print_interface(name, config);
-                    }
                     return Ok(());
-                }
-    
-                let interface_name = args[0].to_string();
-
-                // Handle interface configuration
-                if args.len() == 1 {
-                    // Show single interface
-                    if let Some(config) = ifconfig_state.get(&interface_name) {
-                        print_interface(&interface_name, config);
-                    } else {
-                        println!("Interface {} not found", interface_name);
-                    }
-                } else {
-                    let command = &args[1];
-                    if *command == "up" || *command == "down" {
-                        let is_up = *command == "up";
-                        if let Some(config) = ifconfig_state.get_mut(&interface_name) {
-                            config.is_up = is_up;
-                            println!("{} {} {}", interface_name, 
-                                if is_up { "up" } else { "down" },
-                                if is_up { "and running" } else { "and stopped" });
-                        }
-                    } else {
-                        // Configure new interface or update existing one
-                        if args.len() < 3 || args[2] != "up" {
-                            println!("Error: Missing 'up' command after IP address");
-                            return Ok(());
-                        }
-    
-                        match Ipv4Addr::from_str(command) {
-                            Ok(ip) => {
-                                let netmask = Ipv4Addr::new(255, 255, 255, 0);
-                                let broadcast = calculate_broadcast(ip, netmask);
-                                
-                                let config = InterfaceConfig {
-                                    ip_address: ip,
-                                    netmask,
-                                    broadcast,
-                                    mac_address: "00:0c:29:16:30:92".to_string(),
-                                    mtu: 1500,
-                                    flags: vec!["BROADCAST".to_string(), 
-                                              "RUNNING".to_string(), 
-                                              "MULTICAST".to_string()],
-                                    is_up: true,
-                                };
-    
-                                ifconfig_state.insert(interface_name.clone(), config.clone());
-                                print_interface(&interface_name, &config);
-                            },
-                            Err(_) => {
-                                println!("Error: Invalid IP address format");
-                            }
-                        }
-                    }
                 }
     
                 Ok(())
@@ -1086,51 +1024,28 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
             ]),
             execute: |args, context, _| {
                 if args.is_empty() {
-                    return Err("Incomplete command. Use 'ip ?' for help.".into());
+                    return Err("Incomplete command. The command should be 'ip address <IP address> <subnet_mask>".into());
                 }
-    
-                match (args[0], &context.current_mode) {
-                    ("address", Mode::InterfaceMode) => {
-                        if args.len() == 2 && args[1] == "?" {
-                            println!("<ip-address>          - IP address of the interface");
+                else if args.len() == 3 && args[0] == "address"{
+                    let ip_address = &args[1];
+                    let subnet_mask = &args[2];
+                    let selected_interface = SELECTED_INTERFACE.lock().unwrap();
+                    if let Some(ref interface) = *selected_interface {
+                        match ip_with_cidr(ip_address, subnet_mask) {
+                            Ok(result) => {
+                                // Fixed: Use Ok() and ? to handle the Result returned by execute_spawn_process
+                                println!("IP_address = {}, Interface = {}", &result, interface);
+                                execute_spawn_process("sudo", &["ifconfig", interface, ip_address, "netmask", subnet_mask])?;
+                                println!("IP address {} is configured to the interface {}", &result, interface);
+                                Ok(())
+                            }, 
+                            Err(e) => Err(format!("Failed to configure the IP address: {}", e))
                         }
-                        else if args.len() == 3 && args[2] == "?" {
-                            println!("<netmask>         - Netmask of the interface");
-                        }
-                        else if args.len() != 3 {
-                            return Err("Usage: ip address <ip_address> <netmask>".into());
-                        }
-                        let ip_address: Ipv4Addr = args[1]
-                            .parse()
-                            .map_err(|_| "Invalid IP address format.".to_string())?;
-                        let netmask: Ipv4Addr = args[2]
-                            .parse()
-                            .map_err(|_| "Invalid netmask format.".to_string())?;
-        
-                        let mut ip_address_state = IP_ADDRESS_STATE.lock().unwrap();
-        
-                        if let Some(interface) = &context.selected_interface {
-                            if let Some((existing_ip, existing_broadcast)) = ip_address_state.get_mut(interface) {
-                                *existing_ip = ip_address;
-                                *existing_broadcast = netmask;
-                                println!(
-                                    "Updated interface {} with IP {} and netmask {}",
-                                    interface, ip_address, netmask
-                                );
-                            } else {
-                                ip_address_state.insert(interface.clone(), (ip_address, netmask));
-                                println!(
-                                    "Assigned IP {} and netmask {} to interface {}",
-                                    ip_address, netmask, interface
-                                );
-                            }
-                            Ok(())
-                        } else {
-                            Err("No interface selected. Use the 'interface' command first.".into())
-                        }
-                    },
-                        
-                    _ => Err("Command not available in current mode or invalid command".into())
+                    } else {
+                        Err("No interface selected. Use the 'interface' command first.".into())
+                    }
+                } else {
+                    Err("Invalid command format. Use: ip address <IP address> <subnet_mask>".into())
                 }
             },
         }
@@ -1543,6 +1458,28 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
 
             } else {
                 Err("Invalid syntax. Usage: traceroute <ip/hostname>".into())
+            }
+        },
+    });
+
+    commands.insert("ping1", Command {
+        name: "ping",
+        description: "Ping a specific IP address to check reachability",
+        suggestions: None,
+        suggestions1: None,
+        suggestions2: None,
+        options: Some(vec!["<ip-address>    - Enter the ip-address"]),
+        execute: |args, _context, _| {
+            if args.len() == 1 {
+                let ip = args[0].to_string();
+                
+                println!("Pinging {} with 32 bytes of data:", ip);
+                
+                execute_spawn_process("ping", &["-c", "4", "-s", "32", &ip]);
+                Ok(())
+
+            } else {
+                Err("Invalid syntax. Usage: ping <ip>".into())
             }
         },
     });
