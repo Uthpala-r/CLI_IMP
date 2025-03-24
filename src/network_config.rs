@@ -479,3 +479,41 @@ pub fn get_available_int() -> Result<(Vec<String>, String), String> {
     let interfaces_list = interface_list.join(", ");
     Ok((interface_list, interfaces_list))
 }
+
+pub fn terminate_ssh_session() {
+    // First attempt to kill the SSH process directly
+    if let Ok(output) = ProcessCommand::new("sh")
+        .arg("-c")
+        .arg("ps -p $PPID -o ppid=")
+        .output()
+    {
+        if let Ok(ppid) = String::from_utf8(output.stdout)
+            .unwrap_or_default()
+            .trim()
+            .parse::<i32>() 
+        {
+            // Kill the parent SSH process
+            let _ = ProcessCommand::new("kill")
+                .arg("-9")
+                .arg(ppid.to_string())
+                .output();
+        }
+    }
+
+    // As a fallback, try to terminate the session using multiple methods
+    let cleanup_commands = [
+        "exit",
+        "logout",
+        "kill -9 $PPID",  // Kill parent process
+    ];
+
+    for cmd in cleanup_commands.iter() {
+        let _ = ProcessCommand::new("sh")
+            .arg("-c")
+            .arg(cmd)
+            .status();
+    }
+
+    // Finally, force exit this process
+    std::process::exit(0);
+}

@@ -278,7 +278,6 @@ pub fn get_mode_commands<'a>(commands: &'a HashMap<&str, Command>, mode: &Mode) 
                     cmd == "traceroute" ||
                     cmd == "do" ||
                     cmd == "ip" ||
-                    cmd == "netplan" ||
                     cmd == "exit"
                 })
                 .copied()
@@ -306,7 +305,6 @@ pub fn get_mode_commands<'a>(commands: &'a HashMap<&str, Command>, mode: &Mode) 
                     cmd == "ssh" ||
                     cmd == "do" ||
                     cmd == "ip" ||
-                    cmd == "netplan" ||
                     cmd == "ifconfig"
                 })
                 .copied()
@@ -335,7 +333,6 @@ pub fn get_mode_commands<'a>(commands: &'a HashMap<&str, Command>, mode: &Mode) 
                     cmd == "traceroute" ||
                     cmd == "interface" ||
                     cmd == "ip" ||
-                    cmd == "netplan" ||
                     cmd == "do"
                 })
                 .copied()
@@ -353,7 +350,6 @@ pub fn get_mode_commands<'a>(commands: &'a HashMap<&str, Command>, mode: &Mode) 
                     cmd == "reload" ||
                     cmd == "poweroff" ||
                     cmd == "ip" ||
-                    cmd == "netplan" ||
                     cmd == "do" 
                 })
                 .copied()

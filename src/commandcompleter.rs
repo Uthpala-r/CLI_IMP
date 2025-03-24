@@ -230,10 +230,10 @@ impl Completer for CommandCompleter {
 /// for the commands within each mode.
 fn is_command_allowed_in_mode(command: &String, mode: &Mode) -> bool {
     match mode {
-        Mode::UserMode => matches!(command.as_str(), "enable" | "do" | "disable" | "traceroute" | "connect" | "reload" | "poweroff" | "exit" | "clear" | "help" | "show" | "ping" | "ifconfig" | "ip" | "netplan"),
-        Mode::PrivilegedMode => matches!(command.as_str(), "configure" | "do" | "ssh" | "disable" | "traceroute" | "connect" | "reload" | "poweroff" | "debug" | "undebug" | "exit" | "clear" | "help" | "write" | "copy" | "clock" | "ping" | "show" | "ifconfig" | "ip" | "netplan"),
-        Mode::ConfigMode => matches!(command.as_str(), "hostname" | "do" | "copy" | "interface" | "connect" | "disable" | "traceroute" | "reload" | "poweroff" | "no" | "exit" | "clear" | "help" | "write" | "ping" | "enable" | "service" | "set" | "ifconfig" | "ntp" | "ip" | "netplan"),
-        Mode::InterfaceMode => matches!(command.as_str(), "exit" | "do" | "reload" | "poweroff" | "shutdown" | "no" | "clear" | "help" | "write" | "interface" | "ip" | "netplan"), 
+        Mode::UserMode => matches!(command.as_str(), "enable" | "do" | "disable" | "traceroute" | "connect" | "reload" | "poweroff" | "exit" | "clear" | "help" | "show" | "ping" | "ifconfig" | "ip"),
+        Mode::PrivilegedMode => matches!(command.as_str(), "configure" | "do" | "ssh" | "disable" | "traceroute" | "connect" | "reload" | "poweroff" | "debug" | "undebug" | "exit" | "clear" | "help" | "write" | "copy" | "clock" | "ping" | "show" | "ifconfig" | "ip"),
+        Mode::ConfigMode => matches!(command.as_str(), "hostname" | "do" | "copy" | "interface" | "connect" | "disable" | "traceroute" | "reload" | "poweroff" | "no" | "exit" | "clear" | "help" | "write" | "ping" | "enable" | "service" | "set" | "ifconfig" | "ntp" | "ip"),
+        Mode::InterfaceMode => matches!(command.as_str(), "exit" | "do" | "reload" | "poweroff" | "shutdown" | "no" | "clear" | "help" | "write" | "interface" | "ip"), 
     }
 }
 

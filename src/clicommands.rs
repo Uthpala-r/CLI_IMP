@@ -15,7 +15,7 @@ use crate::execute::Command;
 use crate::cliconfig::CliContext;
 use crate::execute::Mode;
 use crate::clock_settings::{handle_clock_set, parse_clock_set_input, handle_show_clock, handle_show_uptime};
-use crate::network_config::{calculate_broadcast, get_netplan_file, get_available_int, ip_with_cidr, print_interface, format_flags, get_system_interfaces, connect_via_ssh, execute_spawn_process, InterfaceConfig, InterfacesConfig, STATUS_MAP, IP_ADDRESS_STATE,  SELECTED_INTERFACE, ROUTE_TABLE};
+use crate::network_config::{calculate_broadcast, get_netplan_file, terminate_ssh_session, get_available_int, ip_with_cidr, print_interface, format_flags, get_system_interfaces, connect_via_ssh, execute_spawn_process, InterfaceConfig, InterfacesConfig, STATUS_MAP, IP_ADDRESS_STATE,  SELECTED_INTERFACE, ROUTE_TABLE};
 use crate::network_config::NtpAssociation;
 use crate::passwd::{PASSWORD_STORAGE, set_enable_password, set_enable_secret, get_enable_password, get_enable_secret, encrypt_password};
 use crate::show_c::{show_clock, show_uptime, show_version, show_sessions, show_controllers, show_history, show_run_conf, show_start_conf, show_interfaces, show_ip_int_br, show_ip_route, show_login, show_ntp, show_ntp_asso, show_proc};
@@ -311,8 +311,8 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
         suggestions1: None,
         suggestions2: None,
         options: None,
-        execute: |_args, context, _| {
-            if _args.is_empty() {
+        execute: |args, context, _| {
+            if args.is_empty() {
                 match context.current_mode {
                     Mode::InterfaceMode => {
                         context.current_mode = Mode::ConfigMode;
@@ -337,8 +337,13 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
                         Err("No mode to exit.".into())
                     }
                 }
-            } else {
-                Err("Invalid arguments provided to 'exit'. This command does not accept additional arguments.".into())
+            } else if args.len() == 1 && args[0] == "ssh" {
+                println!("Terminating SSH session...");
+                terminate_ssh_session();
+                Ok(())
+            }
+            else {
+                Err("Command is either 'exit' , 'exit cli' or 'exit ssh'".into())
             }
         },
     });
@@ -1009,8 +1014,15 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
                                 match ip_with_cidr(ip_address, subnet_mask) {
                                     Ok(result) => {
                                         // Fixed: Use Ok() and ? to handle the Result returned by execute_spawn_process
-                                        println!("IP_address = {}, Interface = {}", &result, interface);
-                                        execute_spawn_process("sudo", &["ifconfig", interface, ip_address, "netmask", subnet_mask])?;
+                                        //println!("IP_address = {}, Interface = {}", &result, interface);
+                                        execute_spawn_process("sudo", &["ifconfig", interface, ip_address, "netmask", subnet_mask, "up"])?;
+                                        
+                                        let sed_command = format!("sed -i '/ifconfig {}/d' ~/.bashrc", interface);
+                                        execute_spawn_process("sh", &["-c", &sed_command])?;
+                                        
+                                        let echo_command = format!("echo \"sudo ifconfig {} {} netmask {} up\" >> ~/.bashrc", interface, ip_address, subnet_mask);
+                                        execute_spawn_process("sh", &["-c", &echo_command])?;
+
                                         println!("IP address {} is configured to the interface {}", &result, interface);
                                         return Ok(());
                                     }, 
@@ -1071,39 +1083,6 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
     );
 
     commands.insert(
-        "netplan",
-        Command {
-            name: "netplan",
-            description: "Make IP configuration changes permanent",
-            suggestions: Some(vec!["edit", "apply"]),
-            suggestions1: Some(vec!["edit", "address"]),
-            suggestions2: None,
-            options: None,
-            execute: |args, _context, _| {
-                if args.len() == 1 {
-                    if args[0] == "edit" {
-                        //println!("Finding netplan configuration files...");
-                        //execute_spawn_process("sudo", &["nano", "/etc/netplan/*.yaml"])?;
-                        get_netplan_file()?
-                        //return Ok(());
-                    } else if args[0] == "apply" {
-                        println!("Applying the changes");
-                        execute_spawn_process("sudo", &["netplan", "apply"])?;
-                        return Ok(());
-                    } else {
-                        return Err(format!("Unknown netplan command: '{}'. Use 'edit' or 'apply'.", args[0]));
-                    }
-                } else {
-                    return Err("Usage: 'netplan edit' or 'netplan apply'".into());
-                }
-                
-                Ok(())
-            },
-        },
-    );
-
-
-    commands.insert(
         "shutdown",
         Command {
             name: "shutdown",
@@ -1132,7 +1111,7 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
     commands.insert(
         "no",
         Command {
-            name: "no shutdown",
+            name: "no",
             description: "Enable the selected network interface.",
             suggestions: Some(vec!["shutdown", "ntp", "ip"]),
             suggestions1: Some(vec!["shutdown", "ntp", "ip"]),
@@ -1144,7 +1123,7 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
                         let selected_interface = SELECTED_INTERFACE.lock().unwrap();
                         if let Some(ref interface) = *selected_interface {
                             execute_spawn_process("sudo", &["ip", "link", "set", interface, "up"])?;
-                            println!("interface {} is set to down", interface);
+                            println!("interface {} is set to up", interface);
                             Ok(())
                         } else {
                             Err("No interface selected. Use the 'interface' command first.".into())
@@ -1204,6 +1183,29 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
                     } else {
                         Err("The 'no ip route' command is only available in configuration mode.".into())
                     }
+                } else if args[0] == "ip" && args[1] == "address"{
+                    if matches!(context.current_mode, Mode::InterfaceMode) {
+                        let ip_address = &args[2];
+                        let subnet_mask = &args[3];
+                        let selected_interface = SELECTED_INTERFACE.lock().unwrap();
+                        if let Some(ref interface) = *selected_interface {
+                            match ip_with_cidr(ip_address, subnet_mask) {
+                                Ok(result) => {
+                                    // Fixed: Use Ok() and ? to handle the Result returned by execute_spawn_process
+                                    //println!("IP_address = {}, Interface = {}", &result, interface);
+                                    execute_spawn_process("sudo", &["ip", "addr", "del", &result, "dev", interface])?;
+                                    println!("IP address {} is removed from the interface {}", &result, interface);
+                                    return Ok(());
+                                }, 
+                                Err(e) => return Err(format!("Failed to remove the IP address: {}", e))
+                            }
+                        } else {
+                            return Err("No interface selected. Use the 'interface' command first.".into());
+                        }
+                    } else {
+                        Err("The 'no ip address' command is only available in Interface Configuration mode.".into())
+                    }
+                    
                 } 
                 
                 else {

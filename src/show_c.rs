@@ -23,7 +23,7 @@ pub fn show_uptime(clock: &mut Option<Clock>) -> String {
 
 pub fn show_version() {
     //Acess a version file and show
-    println!("Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.1(4)M4, RELEASE SOFTWARE (fc2)");
+    println!("PNF_MPC_CLI_Version --> '1.0.0'");
 }
 
 pub fn show_sessions() -> Result<(), String> {
