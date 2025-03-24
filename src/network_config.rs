@@ -183,17 +183,26 @@ pub fn print_interface(name: &str, config: &InterfaceConfig) {
     );
 }
 
-pub fn get_system_interfaces() -> String {
+pub fn get_system_interfaces(interface: Option<&str>) -> String {
     let output = ProcessCommand::new("ifconfig")
+        .args(interface)
         .output()
         .unwrap_or_else(|_| {
             // Try with /sbin/ifconfig if regular ifconfig fails
             ProcessCommand::new("/sbin/ifconfig")
+                .args(interface)
                 .output()
                 .unwrap_or_else(|_| panic!("Failed to execute ifconfig"))
         });
-
-    String::from_utf8_lossy(&output.stdout).to_string()
+    
+    let output_str = String::from_utf8_lossy(&output.stdout).to_string();
+    
+    // If no specific interface was requested, return all interfaces
+    if interface.is_none() {
+        return output_str;
+    }
+    
+    output_str
 }
 
 
@@ -398,6 +407,42 @@ pub fn execute_spawn_process(command: &str, args: &[&str]) -> Result<(), String>
     }
 }
 
+pub fn get_netplan_file() -> Result<(), String> {
+    // Use shell to list the files
+    let output = match ProcessCommand::new("ls")
+        .args(&["/etc/netplan"])
+        .output() {
+            Ok(output) => output,
+            Err(e) => return Err(format!("Failed to list netplan directory: {}", e)),
+        };
+
+    let files = String::from_utf8_lossy(&output.stdout);
+    let yaml_files: Vec<&str> = files.lines()
+        .filter(|f| f.ends_with(".yaml"))
+        .collect();
+
+    if yaml_files.is_empty() {
+        return Err("No netplan configuration files found.".into());
+    } else if yaml_files.len() == 1 {
+        let filepath = format!("/etc/netplan/{}", yaml_files[0]);
+        println!("Opening configuration file: {}", filepath);
+        println!("Do the changes and press 'Ctrl+o' to save and 'Ctrl+x' to exit");
+        execute_spawn_process("sudo", &["nano", &filepath])?;
+    } else {
+        println!("Available netplan configuration files:");
+        for (i, file) in yaml_files.iter().enumerate() {
+            println!("{}: {}", i + 1, file);
+        }
+
+        println!("Using the first file: {}", yaml_files[0]);
+        let filepath = format!("/etc/netplan/{}", yaml_files[0]);
+        println!("Opening configuration file: {}", filepath);
+        println!("Do the changes and press 'Ctrl+o' to save and 'Ctrl+x' to exit");
+        execute_spawn_process("sudo", &["nano", &filepath])?;
+    }
+    Ok(())
+}
+
 pub fn ip_with_cidr(ip: &str, subnet_mask: &str) -> Result<String, String> {
     let mask_octets: Vec<u8> = subnet_mask
         .split('.')
@@ -411,4 +456,26 @@ pub fn ip_with_cidr(ip: &str, subnet_mask: &str) -> Result<String, String> {
     let cidr_prefix = mask_octets.iter().map(|&octet| octet.count_ones()).sum::<u32>();
 
     Ok(format!("{}/{}", ip, cidr_prefix))
+}
+
+pub fn get_available_int() -> Result<(Vec<String>, String), String> {
+    let interfaces_output = std::fs::read_dir("/sys/class/net");
+                
+    // Create the interface_list from the filesystem entries
+    let interface_list = match interfaces_output {
+        Ok(entries) => {
+            entries
+                .filter_map(|entry| {
+                    entry.ok().and_then(|e| 
+                        e.file_name().into_string().ok()
+                    )
+                })
+                .collect::<Vec<String>>()
+        },
+        Err(e) => return Err(format!("Failed to read network interfaces: {}", e))
+    };
+    
+    // Generate comma-separated list for display
+    let interfaces_list = interface_list.join(", ");
+    Ok((interface_list, interfaces_list))
 }

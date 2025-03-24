@@ -1,7 +1,0 @@
-#V2
-en
-conf t
-int ens33
-ip address 192.168.42.129 255.255.255.0
-exit
-ifconfig

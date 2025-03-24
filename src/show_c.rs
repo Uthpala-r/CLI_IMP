@@ -1,6 +1,6 @@
 use crate::clock_settings::{Clock, handle_show_clock, handle_show_uptime};
 use crate::cliconfig::CliContext;
-use crate::network_config::{read_lines, IP_ADDRESS_STATE, STATUS_MAP};
+use crate::network_config::{read_lines, IP_ADDRESS_STATE, STATUS_MAP, execute_spawn_process};
 use crate::run_config::{get_running_config};
 
 pub fn show_clock(clock: &mut Option<Clock>) -> String {
@@ -26,36 +26,16 @@ pub fn show_version() {
     println!("Cisco IOS Software, C2900 Software (C2900-UNIVERSALK9-M), Version 15.1(4)M4, RELEASE SOFTWARE (fc2)");
 }
 
-pub fn show_sessions() {
+pub fn show_sessions() -> Result<(), String> {
     //Use 'w' command to access the system Telnet sessions
-    println!("% No connections open");
+    execute_spawn_process("sudo", &["w"]);
+    Ok(())
 }
 
-pub fn show_controllers(arg1: Option<&str>, arg2: Option<&str>) -> Result<(), String> {
+pub fn show_controllers() -> Result<(), String> {
     
     //Triggers the command ‘lspci’ or ‘sudo lshw -class network’ and extract the relevant details.
-
-    let interface_type = match arg1 {
-        Some(t) => t,
-        None => return Err("Error: Interface type required. Usage: show controllers <interface-type> <interface-number>".to_string()),
-    };
-
-    let interface_number = arg2.filter(|s| !s.is_empty()).unwrap_or("0/0");
-                                
-    let valid_interfaces = vec![
-        "GigabitEthernet", "FastEthernet", "Ethernet", "Serial"
-    ];
-                                
-    if !valid_interfaces.contains(&interface_type) {
-        return Err(format!("Invalid interface type. Valid types are: {}", 
-            valid_interfaces.join(", ")).into());
-    }
-    
-    println!("Interface {}{}", interface_type, interface_number);
-    println!("Hardware is PQUICC MPC860P ADDR: 80C95180, FASTSEND: 80011BA4");
-    println!("DIST ROUTE ENABLED: 0");
-    println!("Route Cache Flag: 0");
-
+    execute_spawn_process("sudo", &["lshw", "-class", "network"]);
     Ok(())
 }
 
@@ -104,77 +84,29 @@ pub fn show_start_conf(context: &CliContext) -> Result<(), String> {
     Ok(())
 }
 
-pub fn show_interfaces(context: &CliContext) -> Result<(), String> {
-    let ip_address_state = IP_ADDRESS_STATE.lock().unwrap();
-
-    //println!("DEBUG: Selected interface: {:?}", context.selected_interface);
-    //println!("DEBUG: IP_ADDRESS_STATE contains {} entries.", ip_address_state.len());
-
-    let Some(interface_name) = &context.selected_interface else {
-        return Err("No interface selected. Use the 'interface' command first.".into());
-    };
-
-    if ip_address_state.is_empty() {
-        println!("No interfaces found.");
-        return Ok(());
-
-    } else {
-        for (interface_name, (ip_address, _)) in ip_address_state.iter() {
-            println!("{} is up, line protocol is up", interface_name);
-            println!("  Internet address is {}, subnet mask 255.255.255.0", ip_address);
-            println!("  MTU 1500 bytes, BW 10000 Kbit, DLY 100000 usec");
-            println!("  Encapsulation ARPA, loopback not set, keepalive set (10 sec)");
-            println!("  Last clearing of \"show interface\" counters: never");
-            println!("  Input queue: 0/2000/0/0 (size/max/drops/flushes); Total output drops: 0");
-            println!("  5 minute input rate 1000 bits/sec, 10 packets/sec");
-            println!("  5 minute output rate 500 bits/sec, 5 packets/sec");
-            println!("  100 packets input, 1000 bytes, 10 no buffer");
-            println!("  50 packets output, 500 bytes, 0 underruns");
-            
-        }
-    }
+pub fn show_interfaces() -> Result<(), String> {
+    
+    //Use ls /sys/class/net command
+    execute_spawn_process("ls", &["/sys/class/net"]);
     Ok(())
                     
 }
 
 pub fn show_ip_int_br() -> Result<(), String> {
-    let ip_address_state = IP_ADDRESS_STATE.lock().unwrap();
-    let status_map = STATUS_MAP.lock().unwrap();
-
-    println!(
-        "{:<22} {:<15} {:<8} {:<20} {:<20} {:<10}",
-        "Interface", "IP-Address", "OK?", "Method", "Status", "Protocol"
-    );
-
-    for (interface_name, (ip_address, _)) in ip_address_state.iter() {
-        let is_up = status_map.get(interface_name).copied().unwrap_or(false);
-        let status = if is_up {
-            "up"
-        } else {
-            "administratively down"
-        };
-        let protocol = if is_up {
-            "up"
-        } else {
-            "down"
-        };
-
-        println!(
-            "{:<22} {:<15} YES     unset/manual        {}         {}",
-            interface_name, ip_address, status, protocol
-        );
-    }
+    execute_spawn_process("ip", &["a"]);
     Ok(())
 }
 
-pub fn show_login() {
+pub fn show_ip_route() -> Result<(), String> {
+    execute_spawn_process("ip", &["route"]);
+    Ok(())
+}
+
+pub fn show_login() -> Result<(), String> {
     
     //Triggers the system ‘last’ and ‘faillog’ commands.
-    
-    println!("A default login delay of 1 seconds is applied.");
-    println!("No Quiet-Mode access list has been configured.");
-    println!(" ");
-    println!("Router NOT enabled to watch for login Attacks");
+    execute_spawn_process("sudo", &["last"]);
+    Ok(())
 }
 
 pub fn show_ntp_asso(context: &CliContext) -> Result<(), String>{
@@ -213,57 +145,9 @@ pub fn show_ntp(context: &CliContext) -> Result<(), String>{
     Ok(())
 }
 
-pub fn show_proc(){
+pub fn show_proc() -> Result<(), String> {
     //Triggers the system commands (eg. Top, lscpu) and display the output 
-    println!("CPU utilization for five seconds: 0%/0%; one minute: 0%; five minutes: 0%");
-    println!(
-        " PID Q  Ty       PC  Runtime(uS)    Invoked   uSecs    Stacks TTY Process\n\
-        1 C  sp 602F3AF0            0       1627       0 2600/3000   0 Load Meter\n\
-        2 L  we 60C5BE00            4        136      29 5572/6000   0 CEF Scanner\n\
-        3 L  st 602D90F8         1676        837    2002 5740/6000   0 Check heaps\n\
-        4 C  we 602D08F8            0          1       0 5568/6000   0 Chunk Manager\n\
-        5 C  we 602DF0E8            0          1       0 5592/6000   0 Pool Manager"
-    ); 
+    execute_spawn_process("sudo", &["lscpu"]);
+    Ok(()) 
 }
 
-pub fn show_proc_cpu(){
-    //Triggers the system commands (eg. Top, lscpu) and display the output 
-    println!("CPU utilization for five seconds: 8%/4%; one minute: 6%; five minutes: 5%");
-    println!(
-        " PID Runtime(uS)   Invoked  uSecs    5Sec   1Min   5Min TTY Process\n\
-        1         384     32789     11   0.00%  0.00%  0.00%   0 Load Meter\n\
-        2        2752      1179   2334   0.73%  1.06%  0.29%   0 Exec\n\
-        3      318592      5273  60419   0.00%  0.15%  0.17%   0 Check heaps\n\
-        4           4         1   4000   0.00%  0.00%  0.00%   0 Pool Manager\n\
-        5        6472      6568    985   0.00%  0.00%  0.00%   0 ARP Input"
-    );
-}
-
-pub fn show_proc_cpu_his(){
-    //Triggers the system commands (eg. Top, lscpu) and display the output 
-    println!(
-        "CPU% per minute (last 60 minutes)\n\
-        100\n 90\n 80         *  *                     * *     *  * *  *\n\
-        70  * * ***** *  ** ***** ***  **** ******  *  *******     * *\n\
-        60  #***##*##*#***#####*#*###*****#*###*#*#*##*#*##*#*##*****#\n\
-        50  ##########################################################\n\
-        40  ##########################################################\n\
-        30  ##########################################################\n\
-        20  ##########################################################\n\
-        10  ##########################################################\n\
-            0....5....1....1....2....2....3....3....4....4....5....5....\n\
-                    0    5    0    5    0    5    0    5    0    5"
-    );
-}
-
-pub fn show_proc_mem(){
-    //Triggers the system commands (eg. Top, lscpu) and display the output 
-    println!(
-        "Total: 106206400, Used: 7479116, Free: 98727284\n\
-        PID TTY  Allocated      Freed    Holding    Getbufs    Retbufs Process\n\
-        0   0      81648       1808    6577644          0          0 *Init*\n\
-        0   0        572     123196        572          0          0 *Sched*\n\
-        0   0   10750692    3442000       5812    2813524          0 *Dead*\n\
-        1   0        276        276       3804          0          0 Load Meter"
-    );
-}

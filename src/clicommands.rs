@@ -15,10 +15,10 @@ use crate::execute::Command;
 use crate::cliconfig::CliContext;
 use crate::execute::Mode;
 use crate::clock_settings::{handle_clock_set, parse_clock_set_input, handle_show_clock, handle_show_uptime};
-use crate::network_config::{calculate_broadcast, ip_with_cidr, print_interface, format_flags, get_system_interfaces, connect_via_ssh, execute_spawn_process, InterfaceConfig, InterfacesConfig, STATUS_MAP, IP_ADDRESS_STATE,  SELECTED_INTERFACE, ROUTE_TABLE};
+use crate::network_config::{calculate_broadcast, get_netplan_file, get_available_int, ip_with_cidr, print_interface, format_flags, get_system_interfaces, connect_via_ssh, execute_spawn_process, InterfaceConfig, InterfacesConfig, STATUS_MAP, IP_ADDRESS_STATE,  SELECTED_INTERFACE, ROUTE_TABLE};
 use crate::network_config::NtpAssociation;
 use crate::passwd::{PASSWORD_STORAGE, set_enable_password, set_enable_secret, get_enable_password, get_enable_secret, encrypt_password};
-use crate::show_c::{show_clock, show_uptime, show_version, show_sessions, show_controllers, show_history, show_run_conf, show_start_conf, show_interfaces, show_ip_int_br, show_login, show_ntp, show_ntp_asso, show_proc, show_proc_cpu, show_proc_cpu_his, show_proc_mem};
+use crate::show_c::{show_clock, show_uptime, show_version, show_sessions, show_controllers, show_history, show_run_conf, show_start_conf, show_interfaces, show_ip_int_br, show_ip_route, show_login, show_ntp, show_ntp_asso, show_proc};
 
 /// Builds and returns a `HashMap` of available commands, each represented by a `Command` structure.
 /// 
@@ -236,24 +236,11 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
         options: Some(vec!["<interface-name>    - Specify a valid interface name"]),
         execute: |args, context, _| {
             if matches!(context.current_mode, Mode::ConfigMode | Mode::InterfaceMode) {
-                let interfaces_output = std::fs::read_dir("/sys/class/net");
                 
-                // Create the interface_list from the filesystem entries
-                let interface_list = match interfaces_output {
-                    Ok(entries) => {
-                        entries
-                            .filter_map(|entry| {
-                                entry.ok().and_then(|e| 
-                                    e.file_name().into_string().ok()
-                                )
-                            })
-                            .collect::<Vec<String>>()
-                    },
-                    Err(e) => return Err(format!("Failed to read network interfaces: {}", e))
+                let (interface_list, interfaces_list) = match get_available_int() {
+                    Ok(list) => list,
+                    Err(e) => return Err(e),
                 };
-                
-                // Generate comma-separated list for display
-                let interfaces_list = interface_list.join(", ");
                 
                 //let args: Vec<String> = std::env::args().skip(1).collect();
                 if args.is_empty() {
@@ -301,7 +288,7 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
                 "network" => {
                     println!("Connecting to network processor...");
                     //connect_via_ssh("pnfcli", "192.168.253.146")?; //Replace with actual details of NP
-                    connect_via_ssh("root", "192.168.100.100")?;    //OpenWRT VM
+                    connect_via_ssh("root", "192.168.101.100")?;    //OpenWRT VM
                     println!("Connected successfully!");
                     Ok(())
                 },
@@ -551,22 +538,30 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
             suggestions1: None,
             suggestions2: None,
             options: Some(vec![
-                "<interface>         - Network interface name",
-                "<address>           - IP address to set",
-                "up|down             - Bring interface up or down",
-                "netmask <mask>      - Set network mask",
-                "broadcast <addr>    - Set broadcast address",
-                "mtu <size>          - Set MTU size"
+                "<interface>         - Network interface name"
             ]),
             execute: |args, _, _| {
-            
                 // Display all interfaces if no arguments
                 if args.is_empty() {
                     println!("System Network Interfaces:");
                     println!("-------------------------");
-                    println!("{}", get_system_interfaces());
+                    println!("{}", get_system_interfaces(None));
                     
                     return Ok(());
+                } else {
+                    // Get details for the specified interface
+                    let interface_name = &args[0];
+                    println!("Interface: {}", interface_name);
+                    println!("-------------------------");
+                    
+                    // Get the specified interface details
+                    let interface_details = get_system_interfaces(Some(interface_name));
+                    
+                    if interface_details.is_empty() {
+                        println!("Interface '{}' not found.", interface_name);
+                    } else {
+                        println!("{}", interface_details);
+                    }
                 }
     
                 Ok(())
@@ -591,6 +586,7 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
                 "history",
                 "sessions",
                 "interfaces",
+                "ip",
                 "login"
             ]),
             suggestions1: Some(vec![
@@ -605,6 +601,7 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
                 "history",
                 "sessions",
                 "interfaces",
+                "ip",
                 "login"
             ]),
             suggestions2: None,
@@ -631,10 +628,8 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
                         },
 
                         Some(&"controllers") if matches!(context.current_mode, Mode::UserMode) => {
-                            if args.len() < 2 {
-                                return Err("Interface type required. Usage: show controllers <interface-type> <interface-number>".into());
-                            }
-                            show_controllers(Some(args[1]), Some(args[2]));  
+                            
+                            show_controllers();  
                             Ok(())
                         },
                         Some(&"history") if matches!(context.current_mode, Mode::UserMode | Mode::PrivilegedMode) => {
@@ -653,7 +648,7 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
                         },
 
                         Some(&"interfaces") if matches!(context.current_mode, Mode::PrivilegedMode) => {
-                            show_interfaces(&context);
+                            show_interfaces();
                             Ok(())
                         },
 
@@ -667,6 +662,10 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
                                         },
                                         _ => Err("Invalid interface subcommand. Use 'brief'".into())
                                     }
+                                }
+                                Some(&"route") => {
+                                    show_ip_route();
+                                    Ok(())
                                 }
                                 _ => Err("Invalid IP subcommand. Use 'interface brief'".into())
                             }
@@ -692,29 +691,9 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
                         },
                         
                         Some(&"processes") if matches!(context.current_mode, Mode::PrivilegedMode) => {
+                            show_proc();
+                            Ok(())
                             
-                            if args.len() == 1 {
-                                show_proc();
-                                Ok(())     
-                            }
-        
-                            else if args.len() == 2 && args[1] == "cpu"{
-                                show_proc_cpu();
-                                Ok(())
-                            }
-                                    
-                            else if args.len() == 3 && args[1] == "cpu" && args[2] == "history"{
-                                show_proc_cpu_his();
-                                Ok(())
-                            }
-
-                            else if args.len() == 2 && args[1] == "memory"{
-                                show_proc_mem();
-                                Ok(())
-                            }
-                            else{
-                                Err("Invalid subcommand for 'show processes'. Valid subcommands are 'cpu', 'cpu history', and 'memory'.".into())
-                            }
                             
                         },
                         
@@ -755,6 +734,7 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
                 "controllers",
                 "history",
                 "sessions",
+                "ip",
                 "interfaces",
                 "login"
             ]),
@@ -783,10 +763,7 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
                                 Ok(())
                             },
                             Some(&"controllers") => {
-                                if show_args.len() < 2 {
-                                    return Err("Interface type required. Usage: do show controllers <interface-type> <interface-number>".into());
-                                }
-                                show_controllers(Some(show_args[1]), Some(show_args[2]));                                
+                                show_controllers();                                
                                 Ok(())
                             },
                             Some(&"history") => {
@@ -802,7 +779,7 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
                                 Ok(())
                             },
                             Some(&"interfaces") => {
-                                show_interfaces(&context);
+                                show_interfaces();
                                 Ok(())
                             },
                             Some(&"ip") => {
@@ -815,6 +792,10 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
                                             },
                                             _ => Err("Invalid interface subcommand. Use 'brief'".into())
                                         }
+                                    }
+                                    Some(&"route") => {
+                                        show_ip_route();
+                                        Ok(())
                                     }
                                     _ => Err("Invalid IP subcommand. Use 'interface brief'".into())
                                 }
@@ -837,21 +818,8 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
                                 }
                             },
                             Some(&"processes") => {
-                                if show_args.len() == 1 {
-                                    show_proc();
-                                    Ok(())     
-                                } else if show_args.len() == 2 && show_args[1] == "cpu" {
-                                    show_proc_cpu_his();
-                                    Ok(())
-                                } else if show_args.len() == 3 && show_args[1] == "cpu" && show_args[2] == "history" {
-                                    show_proc_cpu_his();
-                                    Ok(())
-                                } else if show_args.len() == 2 && show_args[1] == "memory" {
-                                    show_proc_mem();
-                                    Ok(())
-                                } else {
-                                    Err("Invalid subcommand for 'do show processes'. Valid subcommands are 'cpu', 'cpu history', and 'memory'.".into())
-                                }
+                                show_proc();
+                                Ok(())
                             },
                             Some(cmd) => {
                                 println!("Invalid show command: {}", cmd);
@@ -1015,8 +983,8 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
         Command {
             name: "ip",
             description: "Define all the ip commands",
-            suggestions: Some(vec!["address"]),
-            suggestions1: Some(vec!["address"]),
+            suggestions: Some(vec!["address", "route"]),
+            suggestions1: Some(vec!["address", "route"]),
             suggestions2: None,
             options: Some(vec![
                 "<IP_Address>   - Enter the IP Address",
@@ -1026,29 +994,112 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
                 if args.is_empty() {
                     return Err("Incomplete command. The command should be 'ip address <IP address> <subnet_mask>".into());
                 }
-                else if args.len() == 3 && args[0] == "address"{
-                    let ip_address = &args[1];
-                    let subnet_mask = &args[2];
-                    let selected_interface = SELECTED_INTERFACE.lock().unwrap();
-                    if let Some(ref interface) = *selected_interface {
-                        match ip_with_cidr(ip_address, subnet_mask) {
-                            Ok(result) => {
-                                // Fixed: Use Ok() and ? to handle the Result returned by execute_spawn_process
-                                println!("IP_address = {}, Interface = {}", &result, interface);
-                                execute_spawn_process("sudo", &["ifconfig", interface, ip_address, "netmask", subnet_mask])?;
-                                println!("IP address {} is configured to the interface {}", &result, interface);
-                                Ok(())
-                            }, 
-                            Err(e) => Err(format!("Failed to configure the IP address: {}", e))
+                else if args[0] == "address"{
+                    if args.len() == 1 {
+                        println!("Interface detils");
+                    
+                        execute_spawn_process("ip", &["a"]);
+                        return Ok(());
+                    } else if args.len() == 3 {
+                        if matches!(context.current_mode, Mode::InterfaceMode) {
+                            let ip_address = &args[1];
+                            let subnet_mask = &args[2];
+                            let selected_interface = SELECTED_INTERFACE.lock().unwrap();
+                            if let Some(ref interface) = *selected_interface {
+                                match ip_with_cidr(ip_address, subnet_mask) {
+                                    Ok(result) => {
+                                        // Fixed: Use Ok() and ? to handle the Result returned by execute_spawn_process
+                                        println!("IP_address = {}, Interface = {}", &result, interface);
+                                        execute_spawn_process("sudo", &["ifconfig", interface, ip_address, "netmask", subnet_mask])?;
+                                        println!("IP address {} is configured to the interface {}", &result, interface);
+                                        return Ok(());
+                                    }, 
+                                    Err(e) => return Err(format!("Failed to configure the IP address: {}", e))
+                                }
+                            } else {
+                                return Err("No interface selected. Use the 'interface' command first.".into());
+                            }
+                        } else{
+                            return Err("The 'ip address' command is only available in Interface Configuration mode.".into());
                         }
                     } else {
-                        Err("No interface selected. Use the 'interface' command first.".into())
-                    }
+                        return Err("Invalid command format. Use: 'ip address <IP address> <subnet_mask>'".into());
+                    }   
+                } else if args[0] == "route" {
+                    if matches!(context.current_mode, Mode::ConfigMode) {
+                        if args.len() < 5 {
+                            return Err("Usage: ip route <ip_address> <netmask> <exit_interface> <next_hop>".into());
+                        }
+
+                        let ip_addr = &args[1];
+                        let netmask = &args[2];
+                        let exit_int = &args[3];
+                        let nxt_hop = &args[4];
+
+                        let cidr_notation = match ip_with_cidr(ip_addr, netmask) {
+                            Ok(result) => result,
+                            Err(e) => return Err(format!("Failed to restructure the IP address: {}", e))
+                        };
+
+                        let (interface_list, interfaces_list) = match get_available_int() {
+                            Ok(result) => result,
+                            Err(e) => return Err(e),
+                        };
+
+                        if !interface_list.iter().any(|i| i == exit_int) {
+                            return Err(format!("Invalid exit interface: {}. Available interfaces: {}", exit_int, interfaces_list));
+                        }
+                        
+                        println!("Adding route to {} via {} on interface {}", &cidr_notation, nxt_hop, exit_int);
+
+                        match execute_spawn_process("sudo", &["ip", "route", "add", &cidr_notation, "via", nxt_hop, "dev", exit_int]) {
+                            Ok(_) => {
+                                println!("Route added successfully");
+                                return Ok(());
+                            },
+                            Err(e) => Err::<(), String>(format!("Failed to add route: {}", e).to_string()),
+                        }
+                    } else{
+                        Err("The 'ip route' command is only available in Global Configuration mode.".into())
+                    };
                 } else {
-                    Err("Invalid command format. Use: ip address <IP address> <subnet_mask>".into())
+                    return Err("Invalid command format. Use: 'ip address <IP address> <subnet_mask>' or to check interface detials use 'ip a' command".into());
                 }
+                return Ok(());
             },
         }
+    );
+
+    commands.insert(
+        "netplan",
+        Command {
+            name: "netplan",
+            description: "Make IP configuration changes permanent",
+            suggestions: Some(vec!["edit", "apply"]),
+            suggestions1: Some(vec!["edit", "address"]),
+            suggestions2: None,
+            options: None,
+            execute: |args, _context, _| {
+                if args.len() == 1 {
+                    if args[0] == "edit" {
+                        //println!("Finding netplan configuration files...");
+                        //execute_spawn_process("sudo", &["nano", "/etc/netplan/*.yaml"])?;
+                        get_netplan_file()?
+                        //return Ok(());
+                    } else if args[0] == "apply" {
+                        println!("Applying the changes");
+                        execute_spawn_process("sudo", &["netplan", "apply"])?;
+                        return Ok(());
+                    } else {
+                        return Err(format!("Unknown netplan command: '{}'. Use 'edit' or 'apply'.", args[0]));
+                    }
+                } else {
+                    return Err("Usage: 'netplan edit' or 'netplan apply'".into());
+                }
+                
+                Ok(())
+            },
+        },
     );
 
 
@@ -1063,28 +1114,10 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
             options: None,
             execute: |_, context, _| {
                 if matches!(context.current_mode, Mode::InterfaceMode) {
-                    if let Some(interface) = &context.selected_interface {
-                        let mut network_state = IP_ADDRESS_STATE.lock().unwrap();
-                        let mut status_map = STATUS_MAP.lock().unwrap();
-                        if let Some(interface_config) = network_state.get_mut(interface) {
-                            
-                            let ip_address = interface_config.0.clone();
-                            
-                            let mut interface_config = InterfacesConfig {
-                                ip_address: Ipv4Addr::new(0, 0, 0, 0),
-                                is_up: false,
-                            };
-                            
-                            interface_config.is_up = true;
-                            status_map.insert(interface.clone(), false);
-    
-                            println!(
-                                "Interface {} has been shut down. IP address set to 0.0.0.0",
-                                interface
-                            );
-                        } else {
-                            println!("Interface {} not found.", interface);
-                        }
+                    let selected_interface = SELECTED_INTERFACE.lock().unwrap();
+                    if let Some(ref interface) = *selected_interface {
+                        execute_spawn_process("sudo", &["ip", "link", "set", interface, "down"])?;
+                        println!("interface {} is set to down", interface);
                         Ok(())
                     } else {
                         Err("No interface selected. Use the 'interface' command first.".into())
@@ -1101,40 +1134,23 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
         Command {
             name: "no shutdown",
             description: "Enable the selected network interface.",
-            suggestions: Some(vec!["shutdown", "ntp"]),
-            suggestions1: Some(vec!["shutdown", "ntp"]),
-            suggestions2: Some(vec!["server"]),
+            suggestions: Some(vec!["shutdown", "ntp", "ip"]),
+            suggestions1: Some(vec!["shutdown", "ntp", "ip"]),
+            suggestions2: Some(vec!["server", "route"]),
             options: None,
             execute: |args, context, _| {
                 if args.len() == 1 && args[0] == "shutdown" {
                     if matches!(context.current_mode, Mode::InterfaceMode) {
-                        if let Some(interface) = &context.selected_interface {
-                            let mut network_state = IP_ADDRESS_STATE.lock().unwrap();
-                            let mut status_map = STATUS_MAP.lock().unwrap();
-        
-                            // Check if the interface exists in `NETWORK_STATE`
-                            if let Some((ip_address, broadcast_address)) = network_state.get(interface) {
-                                // Update the administrative status to "up" in `STATUS_MAP`
-                                status_map.insert(interface.clone(), true);
-        
-                                println!(
-                                    "%LINK-5-CHANGED: Interface {}, changed state to up",
-                                    interface
-                                );
-                                println!(
-                                    "%LINEPROTO-5-UPDOWN: Line protocol on Interface {}, changed state to up",
-                                    interface
-                                );
-                                Ok(())
-                            } else {
-                                println!("Interface {} not found.", interface);
-                                Err("Invalid interface.".into())
-                            }
+                        let selected_interface = SELECTED_INTERFACE.lock().unwrap();
+                        if let Some(ref interface) = *selected_interface {
+                            execute_spawn_process("sudo", &["ip", "link", "set", interface, "up"])?;
+                            println!("interface {} is set to down", interface);
+                            Ok(())
                         } else {
                             Err("No interface selected. Use the 'interface' command first.".into())
                         }
                     } else {
-                        Err("The 'no shutdown' command is only available in Interface Configuration mode.".into())
+                        Err("The 'shutdown' command is only available in Interface Configuration mode.".into())
                     }
                 } else if args.len() == 3 && args[0] == "ntp" && args[1] == "server" {
                     if matches!(context.current_mode, Mode::ConfigMode) {
@@ -1150,7 +1166,47 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
                     } else {
                         Err("The 'no ntp server' command is only available in configuration mode.".into())
                     }
-                } else {
+                } else if args[0] == "ip" && args[1] == "route"{
+                    if matches!(context.current_mode, Mode::ConfigMode) {
+
+                        if args.len() < 6 {
+                            return Err("Usage: ip route <ip_address> <netmask> <exit_interface> <next_hop>".into());
+                        }
+
+                        let ip_addr = &args[2];
+                        let netmask = &args[3];
+                        let exit_int = &args[4];
+                        let nxt_hop = &args[5];
+
+                        let cidr_notation = match ip_with_cidr(ip_addr, netmask) {
+                            Ok(result) => result,
+                            Err(e) => return Err(format!("Failed to restructure the IP address: {}", e))
+                        };
+
+                        let (interface_list, interfaces_list) = match get_available_int() {
+                            Ok(result) => result,
+                            Err(e) => return Err(e),
+                        };
+
+                        if !interface_list.iter().any(|i| i == exit_int) {
+                            return Err(format!("Invalid exit interface: {}. Available interfaces: {}", exit_int, interfaces_list));
+                        }
+                        
+                        println!("Deleting route to {} via {} on interface {}", &cidr_notation, nxt_hop, exit_int);
+
+                        match execute_spawn_process("sudo", &["ip", "route", "del", &cidr_notation, "via", nxt_hop, "dev", exit_int]) {
+                            Ok(_) => {
+                                println!("Route deleted successfully");
+                                return Ok(());
+                            },
+                            Err(e) => Err::<(), String>(format!("Failed to delete route: {}", e).to_string()),
+                        }
+                    } else {
+                        Err("The 'no ip route' command is only available in configuration mode.".into())
+                    }
+                } 
+                
+                else {
                     Err("Invalid arguments provided to 'no'.".into())
                 }
                 
@@ -1458,28 +1514,6 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
 
             } else {
                 Err("Invalid syntax. Usage: traceroute <ip/hostname>".into())
-            }
-        },
-    });
-
-    commands.insert("ping1", Command {
-        name: "ping",
-        description: "Ping a specific IP address to check reachability",
-        suggestions: None,
-        suggestions1: None,
-        suggestions2: None,
-        options: Some(vec!["<ip-address>    - Enter the ip-address"]),
-        execute: |args, _context, _| {
-            if args.len() == 1 {
-                let ip = args[0].to_string();
-                
-                println!("Pinging {} with 32 bytes of data:", ip);
-                
-                execute_spawn_process("ping", &["-c", "4", "-s", "32", &ip]);
-                Ok(())
-
-            } else {
-                Err("Invalid syntax. Usage: ping <ip>".into())
             }
         },
     });
