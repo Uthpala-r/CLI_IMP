@@ -407,6 +407,19 @@ pub fn execute_spawn_process(command: &str, args: &[&str]) -> Result<(), String>
     }
 }
 
+pub fn execute_command_with_output(command: &str, args: &[&str]) -> Result<String, String> {
+    let output = std::process::Command::new(command)
+        .args(args)
+        .output()
+        .map_err(|e| format!("Failed to execute command: {}", e))?;
+    
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    } else {
+        Err(format!("Command failed: {}", String::from_utf8_lossy(&output.stderr)))
+    }
+}
+
 pub fn get_netplan_file() -> Result<(), String> {
     // Use shell to list the files
     let output = match ProcessCommand::new("ls")

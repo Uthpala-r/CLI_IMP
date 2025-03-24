@@ -15,7 +15,7 @@ use crate::execute::Command;
 use crate::cliconfig::CliContext;
 use crate::execute::Mode;
 use crate::clock_settings::{handle_clock_set, parse_clock_set_input, handle_show_clock, handle_show_uptime};
-use crate::network_config::{calculate_broadcast, get_netplan_file, terminate_ssh_session, get_available_int, ip_with_cidr, print_interface, format_flags, get_system_interfaces, connect_via_ssh, execute_spawn_process, InterfaceConfig, InterfacesConfig, STATUS_MAP, IP_ADDRESS_STATE,  SELECTED_INTERFACE, ROUTE_TABLE};
+use crate::network_config::{calculate_broadcast, get_netplan_file, execute_command_with_output, terminate_ssh_session, get_available_int, ip_with_cidr, print_interface, format_flags, get_system_interfaces, connect_via_ssh, execute_spawn_process, InterfaceConfig, InterfacesConfig, STATUS_MAP, IP_ADDRESS_STATE,  SELECTED_INTERFACE, ROUTE_TABLE};
 use crate::network_config::NtpAssociation;
 use crate::passwd::{PASSWORD_STORAGE, set_enable_password, set_enable_secret, get_enable_password, get_enable_secret, encrypt_password};
 use crate::show_c::{show_clock, show_uptime, show_version, show_sessions, show_controllers, show_history, show_run_conf, show_start_conf, show_interfaces, show_ip_int_br, show_ip_route, show_login, show_ntp, show_ntp_asso, show_proc};
@@ -1013,15 +1013,17 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
                             if let Some(ref interface) = *selected_interface {
                                 match ip_with_cidr(ip_address, subnet_mask) {
                                     Ok(result) => {
-                                        // Fixed: Use Ok() and ? to handle the Result returned by execute_spawn_process
-                                        //println!("IP_address = {}, Interface = {}", &result, interface);
                                         execute_spawn_process("sudo", &["ifconfig", interface, ip_address, "netmask", subnet_mask, "up"])?;
                                         
-                                        let sed_command = format!("sed -i '/ifconfig {}/d' ~/.bashrc", interface);
-                                        execute_spawn_process("sh", &["-c", &sed_command])?;
+                                        // Create Netplan configuration content
+                                        let netplan_content = format!(
+                                            "network:\n  ethernets:\n    {}:\n      dhcp4: no\n      addresses:\n        - {}\n      nameservers:\n        addresses: [8.8.8.8, 8.8.4.4]",
+                                            interface, &result
+                                        );
                                         
-                                        let echo_command = format!("echo \"sudo ifconfig {} {} netmask {} up\" >> ~/.bashrc", interface, ip_address, subnet_mask);
-                                        execute_spawn_process("sh", &["-c", &echo_command])?;
+                                        // Write to Netplan config file
+                                        let netplan_cmd = format!("echo '{}' | sudo tee /etc/netplan/*.yaml", netplan_content);
+                                        execute_spawn_process("sh", &["-c", &netplan_cmd])?;
 
                                         println!("IP address {} is configured to the interface {}", &result, interface);
                                         return Ok(());
@@ -1123,6 +1125,7 @@ pub fn build_command_registry() -> HashMap<&'static str, Command> {
                         let selected_interface = SELECTED_INTERFACE.lock().unwrap();
                         if let Some(ref interface) = *selected_interface {
                             execute_spawn_process("sudo", &["ip", "link", "set", interface, "up"])?;
+                            execute_spawn_process("sudo", &["netplan", "apply"])?;
                             println!("interface {} is set to up", interface);
                             Ok(())
                         } else {
